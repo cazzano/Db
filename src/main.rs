@@ -7,6 +7,7 @@ mod dr;
 mod store;
 mod store_2;
 mod store_3;
+mod editor;
 
 use dr::DirectoryNavigator;
 use store::UrlStore;

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use dialoguer::{Input, Confirm};
 use colored::*;
 use serde::{Deserialize, Serialize};
+use crate::editor::Editor;  // Add this line
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -13,6 +14,7 @@ struct Config {
 
 pub struct UrlStore {
     urls_dir: PathBuf,
+    editor: Editor,  // Add this field
 }
 
 impl UrlStore {
@@ -29,7 +31,10 @@ impl UrlStore {
         // Construct path to Internet Urls directory
         let urls_dir = PathBuf::from(config.base_path).join("Internet Urls");
         
-        Ok(UrlStore { urls_dir })
+        Ok(UrlStore { 
+            urls_dir,
+            editor: Editor::new()  // Initialize the editor
+        })
     }
 
     pub fn store_url(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -57,6 +62,10 @@ impl UrlStore {
         fs::write(&final_path, "")?;
         
         println!("{} URL file saved: {}", "✓".green(), final_path.display());
+
+        // Add the editor functionality
+        self.editor.edit_file(&final_path)?;
+
         Ok(())
     }
 }
