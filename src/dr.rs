@@ -1,91 +1,138 @@
-// src/dr.rs
-use std::path::{Path, PathBuf};
+use std::env;
 use std::fs;
-use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::error::Error;
 use colored::*;
 
-#[derive(Serialize, Deserialize)]
-struct Config {
-    base_path: String,
-    directories: Vec<String>,
-    created_at: String,
-}
-
 pub struct DirectoryNavigator {
-    current_path: PathBuf,
-    base_path: PathBuf,
+    current_dir: PathBuf,
+    base_dir: PathBuf,
 }
 
 impl DirectoryNavigator {
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let config_path = dirs::config_dir()
-            .ok_or("Could not determine config directory")?
-            .join("db-mg")
-            .join("db.json");
-
-        let config_content = fs::read_to_string(config_path)?;
-        let config: Config = serde_json::from_str(&config_content)?;
-        let base_path = PathBuf::from(config.base_path);
-
+    pub fn new() -> Result<Self, Box<dyn Error>> {
+        let current_dir = env::current_dir()?;
         Ok(DirectoryNavigator {
-            current_path: base_path.clone(),
-            base_path,
+            current_dir: current_dir.clone(),
+            base_dir: current_dir,
         })
     }
 
-    pub fn list_directories(&self) -> Result<(), Box<dyn std::error::Error>> {
-        if !self.current_path.exists() {
-            return Err("Current directory does not exist".into());
-        }
+    pub fn change_directory(&mut self, dir: &str) -> Result<PathBuf, Box<dyn Error>> {
+        // Create the new path, handling both absolute and relative paths
+        let new_path = if PathBuf::from(dir).is_absolute() {
+            PathBuf::from(dir)
+        } else {
+            self.current_dir.join(dir)
+        };
 
-        println!("\nCurrent directory: {}", self.current_path.display().to_string().cyan());
+        // Check if the path exists and is a directory
+        if new_path.exists() && new_path.is_dir() {
+            let canonical_path = new_path.canonicalize()?;
+            
+            // Try to change the current directory
+            match env::set_current_dir(&canonical_path) {
+                Ok(_) => {
+                    self.current_dir = canonical_path.clone();
+                    Ok(canonical_path)
+                },
+                Err(e) => Err(format!("Failed to change directory: {}", e).into())
+            }
+        } else {
+            Err(DirectoryError::InvalidPath(format!("Directory not found: {}", dir)).into())
+        }
+    }
+
+
+    pub fn list_directories(&self) -> Result<(), Box<dyn Error>> {
+        println!("Current directory: {}", self.current_dir.display());
         println!("Contents:");
 
-        let entries = fs::read_dir(&self.current_path)?;
-        
+        let entries = fs::read_dir(&self.current_dir)?;
+
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
+            let metadata = fs::metadata(&path)?;
             let name = path.file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or("Invalid name");
+                .unwrap_or("Invalid filename");
 
-            if path.is_dir() {
+            if metadata.is_dir() {
                 println!("📁 {}", name.blue());
             } else {
                 println!("📄 {}", name);
             }
         }
-        println!();
+
         Ok(())
     }
 
-    pub fn change_directory(&mut self, dir: &str) -> Result<(), Box<dyn std::error::Error>> {
-        // Handle quoted directory names by removing quotes if present
-        let dir = dir.trim_matches('"').trim_matches('\'');
+    pub fn get_current_dir(&self) -> &PathBuf {
+        &self.current_dir
+    }
 
-        let new_path = if dir == ".." {
-            if self.current_path == self.base_path {
-                return Err("Already at base directory".into());
-            }
-            self.current_path.parent()
-                .ok_or("Cannot go up from current directory")?
-                .to_path_buf()
+    pub fn verify_path_exists(&self, path: &str) -> Result<PathBuf, Box<dyn Error>> {
+        let full_path = if PathBuf::from(path).is_absolute() {
+            PathBuf::from(path)
         } else {
-            let target = self.current_path.join(dir);
-            if !target.exists() {
-                return Err(format!("Directory '{}' does not exist", dir).into());
-            }
-            if !target.is_dir() {
-                return Err(format!("'{}' is not a directory", dir).into());
-            }
-            if !target.starts_with(&self.base_path) {
-                return Err("Cannot navigate outside base directory".into());
-            }
-            target
+            self.current_dir.join(path)
         };
 
-        self.current_path = new_path;
-        Ok(())
+        if full_path.exists() {
+            Ok(full_path.canonicalize()?)
+        } else {
+            Err(format!("Path does not exist: {}", full_path.display()).into())
+        }
+    }
+
+    pub fn is_subdirectory(&self, path: &PathBuf) -> bool {
+        if let Ok(canonical_path) = path.canonicalize() {
+            if let Ok(canonical_base) = self.base_dir.canonicalize() {
+                canonical_path.starts_with(canonical_base)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    pub fn get_relative_path(&self, path: &PathBuf) -> Option<PathBuf> {
+        if let Ok(canonical_path) = path.canonicalize() {
+            if let Ok(canonical_current) = self.current_dir.canonicalize() {
+                canonical_path.strip_prefix(canonical_current).ok().map(PathBuf::from)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
+// Error type for directory operations
+#[derive(Debug)]
+pub enum DirectoryError {
+    IoError(std::io::Error),
+    InvalidPath(String),
+    PermissionDenied(String),
+}
+
+impl std::fmt::Display for DirectoryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            DirectoryError::IoError(err) => write!(f, "IO Error: {}", err),
+            DirectoryError::InvalidPath(path) => write!(f, "Invalid path: {}", path),
+            DirectoryError::PermissionDenied(path) => write!(f, "Permission denied: {}", path),
+        }
+    }
+}
+
+impl Error for DirectoryError {}
+
+impl From<std::io::Error> for DirectoryError {
+    fn from(err: std::io::Error) -> Self {
+        DirectoryError::IoError(err)
     }
 }
