@@ -1,8 +1,9 @@
+use crate::editor::Editor;
+use colored::*;
+use dialoguer::{Confirm, Input, Select};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use dialoguer::{Input, Select};
-use colored::*;
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -13,6 +14,7 @@ struct Config {
 
 pub struct SecretStore {
     secrets_dir: PathBuf,
+    editor: Editor,
 }
 
 #[derive(Debug)]
@@ -33,16 +35,19 @@ impl SecretStore {
 
         let config_content = fs::read_to_string(config_path)?;
         let config: Config = serde_json::from_str(&config_content)?;
-        
+
         // Construct path to Secrets directory
         let secrets_dir = PathBuf::from(config.base_path).join("Secrets");
-        
-        Ok(SecretStore { secrets_dir })
+
+        Ok(SecretStore {
+            secrets_dir,
+            editor: Editor::new(),
+        })
     }
 
     fn get_secret_type() -> Result<SecretType, Box<dyn std::error::Error>> {
         let secret_types = vec!["Email", "Social Media", "Phone Number", "Other"];
-        
+
         let selection = Select::new()
             .with_prompt("What type of secret is this?")
             .items(&secret_types)
@@ -81,33 +86,32 @@ impl SecretStore {
 
         // Get the type of secret
         let secret_type = Self::get_secret_type()?;
-        
+
         // Get the base path for this type of secret
         let category_path = self.get_category_path(&secret_type);
 
         // For "Other" type, ask if they want to use a custom folder
         let final_path = if matches!(secret_type, SecretType::Other) {
-            let use_folder = dialoguer::Confirm::new()
+            let use_folder = Confirm::new()
                 .with_prompt("Do you want to save it inside a custom folder? (y/n)")
                 .interact()?;
 
             if use_folder {
                 // Get folder name from user
-                let folder_name: String = Input::new()
-                    .with_prompt("Enter folder name")
-                    .interact()?;
+                let folder_name: String =
+                    Input::new().with_prompt("Enter folder name").interact()?;
 
                 // Create folder if it doesn't exist
                 let folder_path = category_path.join(&folder_name);
                 fs::create_dir_all(&folder_path)?;
-                
+
                 folder_path.join(filename)
             } else {
                 category_path.join(filename)
             }
         } else {
             // For predefined categories, optionally allow subfolder creation
-            let use_subfolder = dialoguer::Confirm::new()
+            let use_subfolder = Confirm::new()
                 .with_prompt("Do you want to create a subfolder under this category? (y/n)")
                 .interact()?;
 
@@ -118,7 +122,7 @@ impl SecretStore {
 
                 let subfolder_path = category_path.join(&subfolder_name);
                 fs::create_dir_all(&subfolder_path)?;
-                
+
                 subfolder_path.join(filename)
             } else {
                 category_path.join(filename)
@@ -127,13 +131,31 @@ impl SecretStore {
 
         // Create the file
         fs::write(&final_path, "")?;
-        
+
         // Get the relative path from the Secrets directory for display
-        let relative_path = final_path.strip_prefix(&self.secrets_dir)
+        let relative_path = final_path
+            .strip_prefix(&self.secrets_dir)
             .unwrap_or(&final_path)
             .display();
-        
-        println!("{} Secret file saved in: Secrets/{}", "✓".green(), relative_path);
+
+        println!(
+            "{} Secret file saved in: Secrets/{}",
+            "✓".green(),
+            relative_path
+        );
+
+        // Ask if user wants to edit the file
+        let edit_file = Confirm::new()
+            .with_prompt("Do you want to edit this secret file now? (y/n)")
+            .interact()?;
+
+        if edit_file {
+            // Edit the file using the Editor
+            if let Err(e) = self.editor.edit_file(&final_path) {
+                println!("Error editing file: {}", e);
+            }
+        }
+
         Ok(())
     }
 }

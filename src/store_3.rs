@@ -1,8 +1,10 @@
+use crate::dir_error::DirectoryState;
+use crate::edit::EditCommand;
+use colored::*;
+use dialoguer::{Confirm, Input, Select};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use dialoguer::{Input, Select};
-use colored::*;
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -13,6 +15,7 @@ struct Config {
 
 pub struct EmergencyStore {
     emergency_dir: PathBuf,
+    edit_command: EditCommand,
 }
 
 #[derive(Debug)]
@@ -24,6 +27,7 @@ enum EmergencyType {
     Coding,
     Apps,
     Secrets,
+    Others, // New category added
 }
 
 impl EmergencyStore {
@@ -36,16 +40,28 @@ impl EmergencyStore {
 
         let config_content = fs::read_to_string(config_path)?;
         let config: Config = serde_json::from_str(&config_content)?;
-        
+
         // Construct path to Emergency directory
         let emergency_dir = PathBuf::from(config.base_path).join("Emergency");
-        
-        Ok(EmergencyStore { emergency_dir })
+
+        Ok(EmergencyStore {
+            emergency_dir,
+            edit_command: EditCommand::new(),
+        })
     }
 
     fn get_emergency_type() -> Result<EmergencyType, Box<dyn std::error::Error>> {
-        let emergency_types = vec!["Videos", "Audios", "Images", "Compressed", "Coding", "Apps", "Secrets"];
-        
+        let emergency_types = vec![
+            "Videos",
+            "Audios",
+            "Images",
+            "Compressed",
+            "Coding",
+            "Apps",
+            "Secrets",
+            "Others", // Added to the selection list
+        ];
+
         let selection = Select::new()
             .with_prompt("What type of emergency file is this?")
             .items(&emergency_types)
@@ -60,6 +76,7 @@ impl EmergencyStore {
             4 => Ok(EmergencyType::Coding),
             5 => Ok(EmergencyType::Apps),
             6 => Ok(EmergencyType::Secrets),
+            7 => Ok(EmergencyType::Others), // New match arm
             _ => Err("Invalid selection".into()),
         }
     }
@@ -73,6 +90,7 @@ impl EmergencyStore {
             EmergencyType::Coding => self.emergency_dir.join("Coding"),
             EmergencyType::Apps => self.emergency_dir.join("Apps"),
             EmergencyType::Secrets => self.emergency_dir.join("Secrets"),
+            EmergencyType::Others => self.emergency_dir.clone(), // Now returns the Emergency directory directly
         }
     }
 
@@ -85,16 +103,21 @@ impl EmergencyStore {
         fs::create_dir_all(self.emergency_dir.join("Coding"))?;
         fs::create_dir_all(self.emergency_dir.join("Apps"))?;
         fs::create_dir_all(self.emergency_dir.join("Secrets"))?;
+        fs::create_dir_all(self.emergency_dir.join("Others"))?; // Create Others directory
         Ok(())
     }
 
-    pub fn store_critical(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn store_critical(
+        &self,
+        filename: &str,
+        dir_state: &DirectoryState,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Ensure all emergency directories exist
         self.ensure_emergency_directories()?;
 
         // Get the type of emergency file
         let emergency_type = Self::get_emergency_type()?;
-        
+
         // Get the base path for this type of emergency file
         let category_path = self.get_category_path(&emergency_type);
 
@@ -111,7 +134,7 @@ impl EmergencyStore {
 
             let subfolder_path = category_path.join(&subfolder_name);
             fs::create_dir_all(&subfolder_path)?;
-            
+
             subfolder_path.join(filename)
         } else {
             category_path.join(filename)
@@ -119,13 +142,29 @@ impl EmergencyStore {
 
         // Create the file
         fs::write(&final_path, "")?;
-        
+
         // Get the relative path from the Emergency directory for display
-        let relative_path = final_path.strip_prefix(&self.emergency_dir)
+        let relative_path = final_path
+            .strip_prefix(&self.emergency_dir)
             .unwrap_or(&final_path)
             .display();
-        
-        println!("{} Emergency file saved in: Emergency/{}", "✓".green(), relative_path);
+
+        println!(
+            "{} Emergency file saved in: Emergency/{}",
+            "✓".green(),
+            relative_path
+        );
+
+        // Ask if user wants to edit the newly created file
+        let edit_file = Confirm::new()
+            .with_prompt("Do you want to edit this emergency file now? (y/n)")
+            .interact()?;
+
+        if edit_file {
+            // Use the edit_command to edit the file
+            self.edit_command.edit_file(&final_path, dir_state)?;
+        }
+
         Ok(())
     }
 }
