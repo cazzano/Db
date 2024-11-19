@@ -12,15 +12,15 @@ Build Dependencies
 
 .. code-block:: bash
 
-     $ sudo pacman -Sy && sudo pacman -S rustup
-     $ rustup default stable
+      sudo pacman -Sy && sudo pacman -S rustup
+      rustup default stable
 
 Build
 =====
 
 .. code-block:: bash
 
-     $ cargo build --release
+      cargo build --release
 
 After Build
 ===========
