@@ -11,5 +11,6 @@ pub fn show_help() {
     println!("  store secret FILENAME - Store a secret file");
     println!("  store critical FILENAME - Store an emergency file");
     println!("  exit    - Exit the program");
+    println!("  edit    - Edits an file");
     println!("  help    - Show this help message");
 }
