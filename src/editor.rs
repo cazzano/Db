@@ -1,10 +1,10 @@
+use colored::*;
+use dialoguer::{Confirm, Select};
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
+use std::fs;
 use std::path::Path;
 use std::process::Command;
-use dialoguer::{Confirm, Select};
-use colored::*;
-use std::fs;
-use rustyline::DefaultEditor;
-use rustyline::error::ReadlineError;
 
 pub struct Editor;
 
@@ -27,7 +27,7 @@ impl EditorType {
     }
 
     fn get_available_editors() -> Vec<EditorType> {
-        let mut editors = vec![
+        let editors = vec![
             (EditorType::Nano, "nano"),
             (EditorType::Vim, "vim"),
             (EditorType::Neovim, "nvim"),
@@ -57,7 +57,10 @@ impl Editor {
         Editor
     }
 
-    fn rust_based_editor<P: AsRef<Path>>(&self, file_path: P) -> Result<(), Box<dyn std::error::Error>> {
+    fn rust_based_editor<P: AsRef<Path>>(
+        &self,
+        file_path: P,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut editor = DefaultEditor::new()?;
         let content = fs::read_to_string(file_path.as_ref())?;
         let current_content = content.lines().collect::<Vec<_>>();
@@ -96,14 +99,17 @@ impl Editor {
         Ok(())
     }
 
-    pub fn edit_file<P: AsRef<Path>>(&self, file_path: P) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn edit_file<P: AsRef<Path>>(
+        &self,
+        file_path: P,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let edit_file = Confirm::new()
             .with_prompt("Do you want to edit this file now? (y/n)")
             .interact()?;
 
         if edit_file {
             let available_editors = EditorType::get_available_editors();
-            
+
             if available_editors.is_empty() {
                 return Err("No supported editors found on the system".into());
             }
@@ -135,9 +141,17 @@ impl Editor {
                         .status()?;
 
                     if status.success() {
-                        println!("{} File edited successfully with {}", "✓".green(), editor_names[selection]);
+                        println!(
+                            "{} File edited successfully with {}",
+                            "✓".green(),
+                            editor_names[selection]
+                        );
                     } else {
-                        println!("{} Failed to edit file with {}", "✗".red(), editor_names[selection]);
+                        println!(
+                            "{} Failed to edit file with {}",
+                            "✗".red(),
+                            editor_names[selection]
+                        );
                     }
                 }
             }

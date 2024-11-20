@@ -4,6 +4,7 @@ use colored::*;
 use dialoguer::{Confirm, Input, Select};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize)]
@@ -16,6 +17,7 @@ struct Config {
 pub struct EmergencyStore {
     emergency_dir: PathBuf,
     edit_command: EditCommand,
+    source_file: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -27,12 +29,11 @@ enum EmergencyType {
     Coding,
     Apps,
     Secrets,
-    Others, // New category added
+    Others,
 }
 
 impl EmergencyStore {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        // Read config to get base path
         let config_path = dirs::config_dir()
             .ok_or("Could not determine config directory")?
             .join("db-mg")
@@ -41,13 +42,48 @@ impl EmergencyStore {
         let config_content = fs::read_to_string(config_path)?;
         let config: Config = serde_json::from_str(&config_content)?;
 
-        // Construct path to Emergency directory
         let emergency_dir = PathBuf::from(config.base_path).join("Emergency");
 
         Ok(EmergencyStore {
             emergency_dir,
             edit_command: EditCommand::new(),
+            source_file: None,
         })
+    }
+
+    pub fn set_source_file(&mut self, source_path: PathBuf) {
+        self.source_file = Some(source_path);
+    }
+
+    fn copy_with_contents(
+        source: &PathBuf,
+        dest: &PathBuf,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if source.is_file() {
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(source, dest)?;
+            return Ok(());
+        }
+
+        if !dest.exists() {
+            fs::create_dir_all(dest)?;
+        }
+
+        for entry in fs::read_dir(source)? {
+            let entry = entry?;
+            let src_path = entry.path();
+            let dest_path = dest.join(entry.file_name());
+
+            if src_path.is_dir() {
+                fs::create_dir_all(&dest_path)?;
+                Self::copy_with_contents(&src_path, &dest_path)?;
+            } else {
+                fs::copy(&src_path, &dest_path)?;
+            }
+        }
+        Ok(())
     }
 
     fn get_emergency_type() -> Result<EmergencyType, Box<dyn std::error::Error>> {
@@ -59,7 +95,7 @@ impl EmergencyStore {
             "Coding",
             "Apps",
             "Secrets",
-            "Others", // Added to the selection list
+            "Others",
         ];
 
         let selection = Select::new()
@@ -76,7 +112,7 @@ impl EmergencyStore {
             4 => Ok(EmergencyType::Coding),
             5 => Ok(EmergencyType::Apps),
             6 => Ok(EmergencyType::Secrets),
-            7 => Ok(EmergencyType::Others), // New match arm
+            7 => Ok(EmergencyType::Others),
             _ => Err("Invalid selection".into()),
         }
     }
@@ -90,12 +126,11 @@ impl EmergencyStore {
             EmergencyType::Coding => self.emergency_dir.join("Coding"),
             EmergencyType::Apps => self.emergency_dir.join("Apps"),
             EmergencyType::Secrets => self.emergency_dir.join("Secrets"),
-            EmergencyType::Others => self.emergency_dir.clone(), // Now returns the Emergency directory directly
+            EmergencyType::Others => self.emergency_dir.clone(),
         }
     }
 
     fn ensure_emergency_directories(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // Create all category directories if they don't exist
         fs::create_dir_all(self.emergency_dir.join("Videos"))?;
         fs::create_dir_all(self.emergency_dir.join("Audios"))?;
         fs::create_dir_all(self.emergency_dir.join("Images"))?;
@@ -103,7 +138,7 @@ impl EmergencyStore {
         fs::create_dir_all(self.emergency_dir.join("Coding"))?;
         fs::create_dir_all(self.emergency_dir.join("Apps"))?;
         fs::create_dir_all(self.emergency_dir.join("Secrets"))?;
-        fs::create_dir_all(self.emergency_dir.join("Others"))?; // Create Others directory
+        fs::create_dir_all(self.emergency_dir.join("Others"))?;
         Ok(())
     }
 
@@ -112,22 +147,16 @@ impl EmergencyStore {
         filename: &str,
         dir_state: &DirectoryState,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Ensure all emergency directories exist
         self.ensure_emergency_directories()?;
 
-        // Get the type of emergency file
         let emergency_type = Self::get_emergency_type()?;
-
-        // Get the base path for this type of emergency file
         let category_path = self.get_category_path(&emergency_type);
 
-        // For all types, optionally allow subfolder creation
-        let use_subfolder = dialoguer::Confirm::new()
+        let use_subfolder = Confirm::new()
             .with_prompt("Do you want to create a subfolder under this category? (y/n)")
             .interact()?;
 
         let final_path = if use_subfolder {
-            // Get subfolder name from user
             let subfolder_name: String = Input::new()
                 .with_prompt("Enter subfolder name")
                 .interact()?;
@@ -140,10 +169,13 @@ impl EmergencyStore {
             category_path.join(filename)
         };
 
-        // Create the file
-        fs::write(&final_path, "")?;
+        // Copy the source file contents if available, otherwise create empty file
+        if let Some(source_path) = &self.source_file {
+            Self::copy_with_contents(source_path, &final_path)?;
+        } else {
+            fs::write(&final_path, "")?;
+        }
 
-        // Get the relative path from the Emergency directory for display
         let relative_path = final_path
             .strip_prefix(&self.emergency_dir)
             .unwrap_or(&final_path)
@@ -155,14 +187,23 @@ impl EmergencyStore {
             relative_path
         );
 
-        // Ask if user wants to edit the newly created file
         let edit_file = Confirm::new()
             .with_prompt("Do you want to edit this emergency file now? (y/n)")
             .interact()?;
 
         if edit_file {
-            // Use the edit_command to edit the file
             self.edit_command.edit_file(&final_path, dir_state)?;
+        }
+
+        // Ask if user wants to drop files or folders
+        let drop_files = Confirm::new()
+            .with_prompt("Do you want to drop files or folders? (y/n)")
+            .interact()?;
+
+        if drop_files {
+            let current_dir = std::env::current_dir()?;
+            Self::copy_with_contents(&self.emergency_dir, &current_dir)?;
+            println!("{} Files and folders dropped successfully", "✓".green());
         }
 
         Ok(())

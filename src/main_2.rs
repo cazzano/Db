@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 use crate::dir_error::{initialize_directory_state, DirectoryState};
 use crate::dr::DirectoryNavigator;
-use crate::main_1::run_command_loop;
 
 #[derive(Deserialize)]
 struct Config {
@@ -26,7 +25,7 @@ pub fn read_base_directory() -> Option<PathBuf> {
 }
 
 pub fn initialize_application() -> (DefaultEditor, DirectoryState, DirectoryNavigator) {
-    let mut rl = DefaultEditor::new().unwrap();
+    let rl = DefaultEditor::new().unwrap(); // Removed 'mut' as it's not needed
 
     // Initialize DirectoryState
     let mut dir_state = match initialize_directory_state() {

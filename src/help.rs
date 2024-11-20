@@ -12,5 +12,6 @@ pub fn show_help() {
     println!("  store critical FILENAME - Store an emergency file");
     println!("  exit    - Exit the program");
     println!("  edit    - Edits an file");
+    println!("  drop    - Copy file or folder , when you drag and drop files or folders");
     println!("  help    - Show this help message");
 }

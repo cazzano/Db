@@ -3,6 +3,7 @@ use colored::*;
 use dialoguer::{Confirm, Input, Select};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize)]
@@ -15,6 +16,7 @@ struct Config {
 pub struct SecretStore {
     secrets_dir: PathBuf,
     editor: Editor,
+    target_directory: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -27,7 +29,6 @@ enum SecretType {
 
 impl SecretStore {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        // Read config to get base path
         let config_path = dirs::config_dir()
             .ok_or("Could not determine config directory")?
             .join("db-mg")
@@ -36,13 +37,58 @@ impl SecretStore {
         let config_content = fs::read_to_string(config_path)?;
         let config: Config = serde_json::from_str(&config_content)?;
 
-        // Construct path to Secrets directory
         let secrets_dir = PathBuf::from(config.base_path).join("Secrets");
 
         Ok(SecretStore {
             secrets_dir,
             editor: Editor::new(),
+            target_directory: None,
         })
+    }
+
+    pub fn set_target_directory(&mut self, target_dir: PathBuf) {
+        self.target_directory = Some(target_dir);
+    }
+
+    fn copy_directory_contents(
+        source: &PathBuf,
+        destination: &PathBuf,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if !destination.exists() {
+            fs::create_dir_all(destination)?;
+        }
+
+        for entry in fs::read_dir(source)? {
+            let entry = entry?;
+            let path = entry.path();
+            let dest_path = destination.join(entry.file_name());
+
+            if path.is_dir() {
+                Self::copy_directory_contents(&path, &dest_path)?;
+            } else {
+                fs::copy(&path, &dest_path)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn copy_file_to_target(&self, source_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(target_dir) = &self.target_directory {
+            if source_path.is_dir() {
+                let dir_name = source_path
+                    .file_name()
+                    .ok_or("Could not determine directory name")?;
+                let target_path = target_dir.join(dir_name);
+                Self::copy_directory_contents(source_path, &target_path)?;
+            } else {
+                let file_name = source_path
+                    .file_name()
+                    .ok_or("Could not determine file name")?;
+                let target_path = target_dir.join(file_name);
+                fs::copy(source_path, target_path)?;
+            }
+        }
+        Ok(())
     }
 
     fn get_secret_type() -> Result<SecretType, Box<dyn std::error::Error>> {
@@ -73,7 +119,6 @@ impl SecretStore {
     }
 
     fn ensure_secret_directories(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // Create all category directories if they don't exist
         fs::create_dir_all(self.secrets_dir.join("Emails"))?;
         fs::create_dir_all(self.secrets_dir.join("Social Media IDs"))?;
         fs::create_dir_all(self.secrets_dir.join("Phone Numbers"))?;
@@ -81,36 +126,26 @@ impl SecretStore {
     }
 
     pub fn store_secret(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
-        // Ensure all secret directories exist
         self.ensure_secret_directories()?;
 
-        // Get the type of secret
         let secret_type = Self::get_secret_type()?;
-
-        // Get the base path for this type of secret
         let category_path = self.get_category_path(&secret_type);
 
-        // For "Other" type, ask if they want to use a custom folder
         let final_path = if matches!(secret_type, SecretType::Other) {
             let use_folder = Confirm::new()
                 .with_prompt("Do you want to save it inside a custom folder? (y/n)")
                 .interact()?;
 
             if use_folder {
-                // Get folder name from user
                 let folder_name: String =
                     Input::new().with_prompt("Enter folder name").interact()?;
-
-                // Create folder if it doesn't exist
                 let folder_path = category_path.join(&folder_name);
                 fs::create_dir_all(&folder_path)?;
-
                 folder_path.join(filename)
             } else {
                 category_path.join(filename)
             }
         } else {
-            // For predefined categories, optionally allow subfolder creation
             let use_subfolder = Confirm::new()
                 .with_prompt("Do you want to create a subfolder under this category? (y/n)")
                 .interact()?;
@@ -119,10 +154,8 @@ impl SecretStore {
                 let subfolder_name: String = Input::new()
                     .with_prompt("Enter subfolder name")
                     .interact()?;
-
                 let subfolder_path = category_path.join(&subfolder_name);
                 fs::create_dir_all(&subfolder_path)?;
-
                 subfolder_path.join(filename)
             } else {
                 category_path.join(filename)
@@ -132,7 +165,6 @@ impl SecretStore {
         // Create the file
         fs::write(&final_path, "")?;
 
-        // Get the relative path from the Secrets directory for display
         let relative_path = final_path
             .strip_prefix(&self.secrets_dir)
             .unwrap_or(&final_path)
@@ -144,18 +176,37 @@ impl SecretStore {
             relative_path
         );
 
-        // Ask if user wants to edit the file
         let edit_file = Confirm::new()
             .with_prompt("Do you want to edit this secret file now? (y/n)")
             .interact()?;
 
         if edit_file {
-            // Edit the file using the Editor
             if let Err(e) = self.editor.edit_file(&final_path) {
                 println!("Error editing file: {}", e);
             }
         }
 
+        // Ask if user wants to drop files or folders
+        if let Some(_target_dir) = &self.target_directory {
+            let drop_items = Confirm::new()
+                .with_prompt("Do you want to drop files or folders? (y/n)")
+                .interact()?;
+
+            if drop_items {
+                // Copy the entire category directory
+                let category_to_copy = self.get_category_path(&secret_type);
+                self.copy_file_to_target(&category_to_copy)?;
+                println!(
+                    "{} Files and folders dropped to current directory",
+                    "✓".green()
+                );
+            }
+        }
+
         Ok(())
+    }
+
+    pub fn get_secrets_dir(&self) -> &PathBuf {
+        &self.secrets_dir
     }
 }
