@@ -1,1 +1,4 @@
-/target
+# In .gitignore
+**/dist/
+**/venv/
+**/__pycache__/
