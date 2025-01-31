@@ -13,6 +13,36 @@ type LocationData struct {
 	Location string `json:"location"`
 }
 
+func getCurrentLocation() (string, error) {
+	// Construct the path to the database file
+	configDir := filepath.Join(os.Getenv("HOME"), ".config", "database")
+	filePath := filepath.Join(configDir, "data_base.json")
+
+	// Check if the file exists
+	_, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		return "", nil // No existing location
+	} else if err != nil {
+		return "", fmt.Errorf("error checking database file: %v", err)
+	}
+
+	// Read the existing JSON file
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("error opening database file: %v", err)
+	}
+	defer file.Close()
+
+	var existingData LocationData
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&existingData)
+	if err != nil {
+		return "", fmt.Errorf("error reading database file: %v", err)
+	}
+
+	return existingData.Location, nil
+}
+
 func parseLocation(input string) (string, error) {
 	// Trim whitespace
 	input = strings.TrimSpace(input)
@@ -107,35 +137,109 @@ func saveLocation(location string) error {
 }
 
 func main() {
-	// Prompt user for location
-	fmt.Print("Enter a location (absolute path): ")
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
+	// Check for existing location
+	currentLocation, err := getCurrentLocation()
 	if err != nil {
-		fmt.Println("Error reading input:", err)
+		fmt.Println("Error checking existing location:", err)
 		return
 	}
 
-	// Parse location
-	location, err := parseLocation(input)
-	if err != nil {
-		fmt.Println("Invalid location:", err)
-		return
-	}
+	// If location exists, provide options
+	if currentLocation != "" {
+		fmt.Printf("Current location: %s\n", currentLocation)
 
-	// Create folder if it doesn't exist
-	location, err = createFolder(location)
-	if err != nil {
-		fmt.Println("Folder creation error:", err)
-		return
-	}
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Println("Choose an option:")
+		fmt.Println("1. Update location")
+		fmt.Println("2. Keep current location")
+		fmt.Println("3. Exit")
+		fmt.Print("Enter your choice (1-3): ")
 
-	// Save location
-	err = saveLocation(location)
-	if err != nil {
-		fmt.Println("Error saving location:", err)
-		return
-	}
+		choice, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading input:", err)
+			return
+		}
 
-	fmt.Printf("Location '%s' saved successfully to ~/.config/database/data_base.json\n", location)
+		// Trim whitespace and convert to lowercase
+		choice = strings.TrimSpace(choice)
+
+		switch choice {
+		case "1":
+			// Proceed with updating location
+			fmt.Print("Enter a new location (absolute path): ")
+			input, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+
+			// Parse new location
+			location, err := parseLocation(input)
+			if err != nil {
+				fmt.Println("Invalid location:", err)
+				return
+			}
+
+			// Create folder if it doesn't exist
+			location, err = createFolder(location)
+			if err != nil {
+				fmt.Println("Folder creation error:", err)
+				return
+			}
+
+			// Save new location
+			err = saveLocation(location)
+			if err != nil {
+				fmt.Println("Error saving location:", err)
+				return
+			}
+
+			fmt.Printf("Location updated to '%s'\n", location)
+
+		case "2":
+			fmt.Println("Keeping current location.")
+			return
+
+		case "3":
+			fmt.Println("Exiting.")
+			return
+
+		default:
+			fmt.Println("Invalid choice. Exiting.")
+			return
+		}
+	} else {
+		// No existing location, prompt to add a new one
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("No existing location found. Enter a new location (absolute path): ")
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading input:", err)
+			return
+		}
+
+		// Parse location
+		location, err := parseLocation(input)
+		if err != nil {
+			fmt.Println("Invalid location:", err)
+			return
+		}
+
+		// Create folder if it doesn't exist
+		location, err = createFolder(location)
+		if err != nil {
+			fmt.Println("Folder creation error:", err)
+			return
+		}
+
+		// Save location
+		err = saveLocation(location)
+		if err != nil {
+			fmt.Println("Error saving location:", err)
+			return
+		}
+
+		fmt.Printf("Location '%s' saved successfully\n", location)
+	}
 }
