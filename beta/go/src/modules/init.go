@@ -4,186 +4,107 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// DatabaseConfig represents the structure of the database configuration
-type DatabaseConfig struct {
-	DatabasePath string `json:"database_path"`
+type LocationData struct {
+	Location string `json:"location"`
 }
 
-// expandHomePath expands the ~ to the user's home directory
-func expandHomePath(path string) string {
-	if strings.HasPrefix(path, "~/") {
+func parseLocation(input string) (string, error) {
+	// Trim whitespace
+	input = strings.TrimSpace(input)
+
+	// Check if input is empty
+	if input == "" {
+		return "", fmt.Errorf("location cannot be empty")
+	}
+
+	// Remove surrounding quotes if present
+	input = strings.Trim(input, "\"'")
+
+	// Expand home directory if needed
+	if strings.HasPrefix(input, "~/") {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Println("Error getting home directory:", err)
-			return path
+			return "", fmt.Errorf("error getting home directory: %v", err)
 		}
-		return filepath.Join(homeDir, path[2:])
+		input = filepath.Join(homeDir, input[2:])
 	}
-	return path
+
+	// Clean and validate path
+	location := filepath.Clean(input)
+
+	// Check if the location is an absolute path
+	if !filepath.IsAbs(location) {
+		return "", fmt.Errorf("please provide an absolute path")
+	}
+
+	// Optional: Check if the directory exists
+	if _, err := os.Stat(location); os.IsNotExist(err) {
+		return "", fmt.Errorf("location does not exist: %s", location)
+	}
+
+	return location, nil
 }
 
-// createConfigDirectory creates the necessary config directory
-func createConfigDirectory() error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	configDir := filepath.Join(homeDir, ".config", "database")
-	return os.MkdirAll(configDir, 0755)
-}
-
-// saveConfigFile saves the database path to config.json
-func saveConfigFile(path string) error {
-	// Expand and clean the path
-	cleanPath := expandHomePath(filepath.Clean(path))
-
-	// Verify path exists
-	if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-		fmt.Println("Warning: Specified path does not exist.")
-		fmt.Print("Do you want to create the directory? (y/n): ")
-		var response string
-		fmt.Scanln(&response)
-		if strings.ToLower(response) == "y" {
-			err = os.MkdirAll(cleanPath, 0755)
-			if err != nil {
-				return fmt.Errorf("failed to create directory: %v", err)
-			}
-		} else {
-			return fmt.Errorf("directory not created")
-		}
-	}
-
-	// Create config struct
-	config := DatabaseConfig{
-		DatabasePath: cleanPath,
-	}
-
-	// Convert to JSON
-	configJSON, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return err
-	}
-
+func saveLocation(location string) error {
 	// Create config directory if it doesn't exist
-	err = createConfigDirectory()
+	configDir := filepath.Join(os.Getenv("HOME"), ".config", "database")
+	err := os.MkdirAll(configDir, 0755)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating config directory: %v", err)
 	}
 
-	// Define config file path
-	homeDir, _ := os.UserHomeDir()
-	configFilePath := filepath.Join(homeDir, ".config", "database", "config.json")
+	// Prepare data to be saved
+	data := LocationData{
+		Location: location,
+	}
 
-	// Write JSON to file
-	err = ioutil.WriteFile(configFilePath, configJSON, 0644)
+	// Create JSON file
+	filePath := filepath.Join(configDir, "data_base.json")
+	file, err := os.Create(filePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating file: %v", err)
+	}
+	defer file.Close()
+
+	// Encode and write JSON
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	err = encoder.Encode(data)
+	if err != nil {
+		return fmt.Errorf("error writing JSON: %v", err)
 	}
 
 	return nil
 }
 
-// readConfigFile reads the existing database configuration
-func readConfigFile() (*DatabaseConfig, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-
-	configFilePath := filepath.Join(homeDir, ".config", "database", "config.json")
-
-	// Check if config file exists
-	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("config file does not exist")
-	}
-
-	// Read config file
-	configData, err := ioutil.ReadFile(configFilePath)
-	if err != nil {
-		return nil, err
-	}
-
-	// Unmarshal JSON
-	var config DatabaseConfig
-	err = json.Unmarshal(configData, &config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &config, nil
-}
-
-// promptForPath interactively gets the database path from user
-func promptForPath() string {
-	reader := bufio.NewReader(os.Stdin)
-
-	for {
-		fmt.Print("Enter the full path for your database: ")
-		path, _ := reader.ReadString('\n')
-		path = strings.TrimSpace(path)
-
-		// Validate path
-		if path == "" {
-			fmt.Println("Path cannot be empty. Please try again.")
-			continue
-		}
-
-		// Expand and clean path
-		cleanPath := expandHomePath(filepath.Clean(path))
-
-		// Confirm path
-		fmt.Printf("You entered: %s\n", cleanPath)
-		fmt.Print("Is this correct? (y/n): ")
-		var confirm string
-		fmt.Scanln(&confirm)
-
-		if strings.ToLower(confirm) == "y" {
-			return cleanPath
-		}
-	}
-}
-
 func main() {
-	fmt.Println("Database Path Configuration")
-	fmt.Println("-------------------------")
-
-	// Check if config already exists
-	existingConfig, err := readConfigFile()
-	if err == nil {
-		fmt.Println("Existing database path:", existingConfig.DatabasePath)
-		fmt.Print("Do you want to update the path? (y/n): ")
-		var response string
-		fmt.Scanln(&response)
-		if strings.ToLower(response) != "y" {
-			fmt.Println("Configuration unchanged.")
-			return
-		}
-	}
-
-	// Get database path
-	databasePath := promptForPath()
-
-	// Save configuration
-	err = saveConfigFile(databasePath)
+	// Prompt user for location
+	fmt.Print("Enter a location (absolute path): ")
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
 	if err != nil {
-		fmt.Println("Error saving configuration:", err)
+		fmt.Println("Error reading input:", err)
 		return
 	}
 
-	fmt.Println("Database path successfully configured!")
-
-	// Verify and display the saved path
-	savedConfig, err := readConfigFile()
+	// Parse and validate location
+	location, err := parseLocation(input)
 	if err != nil {
-		fmt.Println("Error reading saved configuration:", err)
+		fmt.Println("Invalid location:", err)
 		return
 	}
-	fmt.Println("Saved database path:", savedConfig.DatabasePath)
+
+	// Save location
+	err = saveLocation(location)
+	if err != nil {
+		fmt.Println("Error saving location:", err)
+		return
+	}
+
+	fmt.Printf("Location '%s' saved successfully to ~/.config/database/data_base.json\n", location)
 }
