@@ -7,10 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Config struct {
-	Location string `json:"location"`
+	Location string            `json:"location"`
+	Folders  map[string]Folder `json:"folders"`
+}
+
+type Folder struct {
+	Path        string    `json:"path"`
+	CreatedAt   time.Time `json:"created_at"`
+	Description string    `json:"description,omitempty"`
 }
 
 func main() {
@@ -21,7 +29,8 @@ func main() {
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
 		fmt.Printf("Error reading config file: %v\n", err)
-		return
+		// Initialize a new config if file doesn't exist
+		configData = []byte("{\"location\":\"\", \"folders\":{}}")
 	}
 
 	// Parse the JSON config
@@ -30,6 +39,11 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error parsing config file: %v\n", err)
 		return
+	}
+
+	// Ensure folders map is initialized
+	if config.Folders == nil {
+		config.Folders = make(map[string]Folder)
 	}
 
 	// Print the base location
@@ -53,6 +67,15 @@ func main() {
 		fmt.Println("Folder name cannot be empty.")
 		return
 	}
+
+	// Prompt for folder description (optional)
+	fmt.Print("Enter a description for the folder (optional): ")
+	description, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("Error reading description: %v\n", err)
+		return
+	}
+	description = strings.TrimSpace(description)
 
 	// Construct full path
 	fullPath := filepath.Join(config.Location, folderName)
@@ -80,7 +103,30 @@ func main() {
 			fmt.Printf("Error creating directory: %v\n", err)
 			return
 		}
+
+		// Create folder entry in config
+		folderEntry := Folder{
+			Path:        fullPath,
+			CreatedAt:   time.Now(),
+			Description: description,
+		}
+		config.Folders[folderName] = folderEntry
+
+		// Write updated config back to file
+		updatedConfigData, err := json.MarshalIndent(config, "", "  ")
+		if err != nil {
+			fmt.Printf("Error preparing config data: %v\n", err)
+			return
+		}
+
+		err = os.WriteFile(configPath, updatedConfigData, 0644)
+		if err != nil {
+			fmt.Printf("Error updating config file: %v\n", err)
+			return
+		}
+
 		fmt.Printf("Folder '%s' created successfully at: %s\n", folderName, fullPath)
+		fmt.Println("Folder information saved to configuration.")
 	} else {
 		fmt.Println("Folder creation cancelled.")
 	}
