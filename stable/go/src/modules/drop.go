@@ -123,6 +123,38 @@ func copyDir(src, dst string) error {
 	})
 }
 
+func moveFile(src, dst string) error {
+	// First copy the file
+	err := copyFile(src, dst)
+	if err != nil {
+		return err
+	}
+
+	// Then remove the source file
+	err = os.Remove(src)
+	if err != nil {
+		return fmt.Errorf("error removing source file: %v", err)
+	}
+
+	return nil
+}
+
+func moveDir(src, dst string) error {
+	// First copy the directory
+	err := copyDir(src, dst)
+	if err != nil {
+		return err
+	}
+
+	// Then remove the source directory
+	err = os.RemoveAll(src)
+	if err != nil {
+		return fmt.Errorf("error removing source directory: %v", err)
+	}
+
+	return nil
+}
+
 func main() {
 	// Support multiple ways of getting the path
 	var sourcePath string
@@ -158,24 +190,54 @@ func main() {
 		return
 	}
 
+	// Ask user whether to copy or move
+	fmt.Println("Choose an action:")
+	fmt.Println("1. Copy")
+	fmt.Println("2. Move")
+	fmt.Print("Enter your choice (1/2): ")
+	var choice string
+	fmt.Scanln(&choice)
+
 	// Get the base name of the source
 	baseName := filepath.Base(sourcePath)
 	destPath := filepath.Join(currentDir, baseName)
 
-	// Copy file or directory
-	if fileInfo.IsDir() {
-		err = copyDir(sourcePath, destPath)
-		if err != nil {
-			fmt.Println("Error copying directory:", err)
-			return
+	// Perform action based on user choice
+	if choice == "1" || choice == "copy" {
+		// Copy
+		if fileInfo.IsDir() {
+			err = copyDir(sourcePath, destPath)
+			if err != nil {
+				fmt.Println("Error copying directory:", err)
+				return
+			}
+			fmt.Printf("Directory '%s' copied successfully to current directory\n", baseName)
+		} else {
+			err = copyFile(sourcePath, destPath)
+			if err != nil {
+				fmt.Println("Error copying file:", err)
+				return
+			}
+			fmt.Printf("File '%s' copied successfully to current directory\n", baseName)
 		}
-		fmt.Printf("Directory '%s' copied successfully to current directory\n", baseName)
+	} else if choice == "2" || choice == "move" {
+		// Move
+		if fileInfo.IsDir() {
+			err = moveDir(sourcePath, destPath)
+			if err != nil {
+				fmt.Println("Error moving directory:", err)
+				return
+			}
+			fmt.Printf("Directory '%s' moved successfully to current directory\n", baseName)
+		} else {
+			err = moveFile(sourcePath, destPath)
+			if err != nil {
+				fmt.Println("Error moving file:", err)
+				return
+			}
+			fmt.Printf("File '%s' moved successfully to current directory\n", baseName)
+		}
 	} else {
-		err = copyFile(sourcePath, destPath)
-		if err != nil {
-			fmt.Println("Error copying file:", err)
-			return
-		}
-		fmt.Printf("File '%s' copied successfully to current directory\n", baseName)
+		fmt.Println("Invalid choice. Please choose 1 for copy or 2 for move.")
 	}
 }
