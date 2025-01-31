@@ -42,9 +42,33 @@ func parseLocation(input string) (string, error) {
 		return "", fmt.Errorf("please provide an absolute path")
 	}
 
-	// Optional: Check if the directory exists
+	return location, nil
+}
+
+func createFolder(location string) (string, error) {
+	// Check if the directory exists
 	if _, err := os.Stat(location); os.IsNotExist(err) {
-		return "", fmt.Errorf("location does not exist: %s", location)
+		// Prompt user to create the folder
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Printf("The folder '%s' does not exist. Do you want to create it? (y/n): ", location)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			return "", fmt.Errorf("error reading input: %v", err)
+		}
+
+		// Trim whitespace and convert to lowercase
+		response = strings.TrimSpace(strings.ToLower(response))
+
+		if response == "y" || response == "yes" {
+			// Create the directory with full permissions
+			err = os.MkdirAll(location, 0755)
+			if err != nil {
+				return "", fmt.Errorf("failed to create directory: %v", err)
+			}
+			fmt.Printf("Folder '%s' created successfully.\n", location)
+		} else {
+			return "", fmt.Errorf("folder creation cancelled")
+		}
 	}
 
 	return location, nil
@@ -92,10 +116,17 @@ func main() {
 		return
 	}
 
-	// Parse and validate location
+	// Parse location
 	location, err := parseLocation(input)
 	if err != nil {
 		fmt.Println("Invalid location:", err)
+		return
+	}
+
+	// Create folder if it doesn't exist
+	location, err = createFolder(location)
+	if err != nil {
+		fmt.Println("Folder creation error:", err)
 		return
 	}
 
