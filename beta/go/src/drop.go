@@ -13,26 +13,20 @@ func Drop() {
 	// Support multiple ways of getting the path
 	var sourcePath string
 
-	// Check command-line arguments first
-	if len(os.Args) > 1 {
-		sourcePath = strings.Join(os.Args[1:], " ")
-	} else {
-		// Prompt user for file or folder path
-		fmt.Println("Drop your file or folder here (enter full path):")
+	// Prompt user for file or folder path
+	fmt.Println("Drop your file or folder here (enter full path):")
 
-		// Use bufio to handle paths with spaces
-		reader := bufio.NewReader(os.Stdin)
-		sourcePath, _ = reader.ReadString('\n')
-		sourcePath = strings.TrimSpace(sourcePath)
-	}
+	// Use bufio to handle paths with spaces
+	reader := bufio.NewReader(os.Stdin)
+	sourcePath, _ = reader.ReadString('\n')
+	sourcePath = strings.TrimSpace(sourcePath)
 
 	// Sanitize the path
 	sourcePath = sanitizePath(sourcePath)
 
-	// Get current working directory
-	currentDir, err := os.Getwd()
-	if err != nil {
-		fmt.Println("Error getting current directory:", err)
+	// Ensure the source path is absolute
+	if !filepath.IsAbs(sourcePath) {
+		fmt.Println("Please provide an absolute path.")
 		return
 	}
 
@@ -54,7 +48,7 @@ func Drop() {
 
 	// Get the base name of the source
 	baseName := filepath.Base(sourcePath)
-	destPath := filepath.Join(currentDir, baseName)
+	destPath := filepath.Join(".", baseName) // Use current directory (destination folder)
 
 	// Perform action based on user choice
 	if choice == "1" || choice == "copy" {
