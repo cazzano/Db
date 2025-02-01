@@ -117,7 +117,39 @@ func Store() {
 
 		fmt.Printf("Folder '%s' created successfully at: %s\n", folderName, fullPath)
 		fmt.Println("Folder information saved to configuration.")
+
+		// Ask the user if they want to drop files into the newly created folder
+		fmt.Print("Do you want to drop files into this folder? (yes/no): ")
+		fmt.Scanln(&response)
+		if response == "yes" || response == "y" {
+			// Call the drop logic
+			DropFiles(fullPath)
+		} else {
+			fmt.Println("No files will be dropped into the folder.")
+		}
 	} else {
 		fmt.Println("Folder creation cancelled.")
 	}
+}
+
+// DropFiles calls the drop logic to copy or move files into the specified folder
+func DropFiles(destinationFolder string) {
+	// Set the current working directory to the destination folder
+	originalDir, err := os.Getwd()
+	if err != nil {
+		fmt.Println("Error getting current directory:", err)
+		return
+	}
+	defer os.Chdir(originalDir) // Restore the original working directory
+
+	// Change to the destination folder
+	err = os.Chdir(destinationFolder)
+	if err != nil {
+		fmt.Printf("Error changing to directory '%s': %v\n", destinationFolder, err)
+		return
+	}
+
+	// Call the drop logic
+	fmt.Println("You can now drop files into the folder:")
+	Drop()
 }
