@@ -10,17 +10,6 @@ import (
 	"time"
 )
 
-type Config struct {
-	Location string            `json:"location"`
-	Folders  map[string]Folder `json:"folders"`
-}
-
-type Folder struct {
-	Path        string    `json:"path"`
-	CreatedAt   time.Time `json:"created_at"`
-	Description string    `json:"description,omitempty"`
-}
-
 // Store is the refactored main function from store.go
 func Store() {
 	// Expand the path to the config file
