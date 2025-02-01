@@ -13,6 +13,7 @@ func main() {
 		fmt.Println("  init   - Initialize or update the base location")
 		fmt.Println("  store  - Create and store a new folder")
 		fmt.Println("  recent - List recently created folders")
+		fmt.Println("  drop   - Drop files into a folder")
 		return
 	}
 
@@ -27,11 +28,15 @@ func main() {
 	case "recent":
 		// Call the recent functionality
 		Recent()
+	case "drop":
+		// Call the drop functionality
+		Drop()
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
 		fmt.Println("Available commands:")
 		fmt.Println("  init   - Initialize or update the base location")
 		fmt.Println("  store  - Create and store a new folder")
 		fmt.Println("  recent - List recently created folders")
+		fmt.Println("  drop   - Drop files into a folder")
 	}
 }
